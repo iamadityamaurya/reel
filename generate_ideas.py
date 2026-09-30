@@ -10,6 +10,7 @@ Examples:
 """
 
 import argparse
+import importlib
 import json
 import logging
 from datetime import datetime, timezone
@@ -17,7 +18,8 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 import config
-from idea_service import IdeaService
+
+IdeaService = getattr(importlib.import_module("01_ideas.idea_service"), "IdeaService")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("IdeaGenerator")

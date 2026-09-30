@@ -1,0 +1,20 @@
+# Reel generation pipeline dependencies
+# Requires ffmpeg / ffprobe to be installed on the system.
+
+# LLM (ideas + script)
+groq==1.7.0
+
+# Text-to-speech
+elevenlabs==2.70.0
+
+# Image handling (avatars / video frames)
+Pillow==12.3.0
+
+# Cloud storage (Supabase S3 / AWS S3 / R2)
+boto3==1.43.105
+
+# Instagram Graph API
+httpx==0.28.1
+
+# Environment configuration
+python-dotenv==1.2.3

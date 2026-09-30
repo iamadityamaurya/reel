@@ -1,30 +1,46 @@
-import os
-import asyncio
-import subprocess
 import logging
+import subprocess
 from pathlib import Path
 from typing import List, Dict, Any, Tuple
+
 from elevenlabs.client import ElevenLabs
+
 import config
+from utils import retry_call
 
 logger = logging.getLogger(__name__)
 
 class TTSService:
     def __init__(self):
-        self.client = ElevenLabs(api_key=config.ELEVENLABS_API_KEY)
+        if not config.ELEVENLABS_API_KEY:
+            raise ValueError(
+                "ELEVENLABS_API_KEY is not set. Add it to reel/.env to generate audio."
+            )
+        self.client = ElevenLabs(api_key=config.ELEVENLABS_API_KEY, timeout=120.0)
 
     def synthesize_line(self, text: str, voice_name: str, output_path: Path) -> float:
-        """Synthesizes text using Microsoft Edge Neural TTS."""
+        """Synthesizes a single dialogue line using ElevenLabs."""
+        if not voice_name:
+            raise ValueError(
+                "Missing ElevenLabs voice ID. Set DEFAULT_VOICE_A / DEFAULT_VOICE_B in reel/.env."
+            )
+
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Synthesize speech using ElevenLabs client
-        audio = self.client.text_to_speech.convert(
-            text=text,
-            voice_id=voice_name,
-            model_id=config.ELEVENLABS_MODEL_ID,
+
+        # Consume the stream inside the retry so transient network errors are retried.
+        chunks = retry_call(
+            lambda: list(self.client.text_to_speech.convert(
+                text=text,
+                voice_id=voice_name,
+                model_id=config.ELEVENLABS_MODEL_ID,
+            )),
+            attempts=3,
+            base_delay=2.0,
+            description=f"ElevenLabs TTS for '{text[:40]}...'",
         )
+
         with open(output_path, "wb") as f:
-            for chunk in audio:
+            for chunk in chunks:
                 f.write(chunk)
 
         duration = self.get_audio_duration(output_path)

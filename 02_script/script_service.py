@@ -1,21 +1,29 @@
 import json
 import logging
 from typing import Dict, Any, List, Optional
+
+from groq import Groq
+
 import config
+from utils import retry_call
 
 logger = logging.getLogger(__name__)
 
 class ScriptService:
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or config.GROQ_API_KEY
+        self.client = (
+            Groq(api_key=self.api_key, max_retries=0, timeout=60.0)
+            if self.api_key else None
+        )
 
     def generate_script(self, idea_title: str, idea_summary: str, duration_sec: int = 30) -> Dict[str, Any]:
-        if not self.api_key:
+        if self.client is None:
+            logger.warning("GROQ_API_KEY is not set; using offline fallback script.")
             return self._fallback_script(idea_title)
 
         try:
-            from groq import Groq
-            client = Groq(api_key=self.api_key)
+            client = self.client
 
             prompt = f"""Write a compelling 2-person conversational video script between Character A and Character B.
 Title: {idea_title}
@@ -49,10 +57,15 @@ Return ONLY valid JSON with this exact structure:
   ]
 }}
 """
-            response = client.chat.completions.create(
-                model=config.GROQ_MODEL,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.7
+            response = retry_call(
+                lambda: client.chat.completions.create(
+                    model=config.GROQ_MODEL,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.7,
+                ),
+                attempts=3,
+                base_delay=2.0,
+                description="Groq script generation",
             )
             raw = response.choices[0].message.content.strip()
             if raw.startswith("```json"):
@@ -70,8 +83,8 @@ Return ONLY valid JSON with this exact structure:
                 item["text"] = self._clean_text(item.get("text", ""))
             return data
         except Exception as e:
-            logger.error(f"Failed to generate script via Groq: {e}")
-            return self._fallback_script(idea_title)
+            logger.exception("Groq script generation failed.")
+            raise RuntimeError(f"Failed to generate script via Groq: {e}") from e
 
     def validate_script(self, script_data: Dict[str, Any]) -> bool:
         if "title" not in script_data or "dialogue" not in script_data:

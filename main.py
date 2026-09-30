@@ -7,22 +7,29 @@ Run this script end-to-end to generate complete conversational reels!
 import sys
 import argparse
 import logging
+import asyncio
+import importlib
+import subprocess
 from pathlib import Path
 from typing import Optional
 
 import config
-from dotenv import load_dotenv
-load_dotenv('/home/aditys/code/education/.env')
-import os
-import boto3
-import requests
-import subprocess
-from idea_service import IdeaService
-from script_service import ScriptService
-from audio_service import TTSService, AudioProcessor
-from subtitle_service import SubtitleService
-from video_service import ImageManager, VideoRenderer
 from workflow_manager import WorkflowManager
+
+
+def _load(module_path: str, name: str):
+    """Import a numbered stage package (e.g. "01_ideas.idea_service")."""
+    return getattr(importlib.import_module(module_path), name)
+
+
+IdeaService = _load("01_ideas.idea_service", "IdeaService")
+ScriptService = _load("02_script.script_service", "ScriptService")
+TTSService = _load("03_tts.audio_service", "TTSService")
+AudioProcessor = _load("03_tts.audio_service", "AudioProcessor")
+ImageManager = _load("04_images.image_service", "ImageManager")
+SubtitleService = _load("05_captions.subtitle_service", "SubtitleService")
+VideoRenderer = _load("06_video.video_service", "VideoRenderer")
+publish_reel_pipeline = _load("07_publish.instagram", "publish_reel_pipeline")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("ReelPipeline")
@@ -37,6 +44,11 @@ def run_pipeline(
     workflow = WorkflowManager(job_id=job_id)
     print(f"\n🚀 Starting Two-Person Reel Workflow (Job ID: {workflow.job_id})")
     print(f"📌 Topic: {topic} | Aspect Ratio: {aspect_ratio}\n")
+
+    if not voice_a or not voice_b:
+        raise ValueError(
+            "Missing ElevenLabs voice IDs. Set DEFAULT_VOICE_A and DEFAULT_VOICE_B in reel/.env."
+        )
 
     # Step 1: Default Character Images
     char_a_path = config.ASSETS_DIR / "char_a.png"
@@ -70,7 +82,7 @@ def run_pipeline(
 
     # Step 4: Text-to-Speech Generation
     workflow.update_status("GENERATING_AUDIO")
-    print("\n🎙️ Step 3: Synthesizing character voices via Deepgram...")
+    print("\n🎙️ Step 3: Synthesizing character voices via ElevenLabs...")
     tts = TTSService()
     line_files = []
     
@@ -104,7 +116,6 @@ def run_pipeline(
     workflow.update_status("RENDERING_VIDEO")
     print("\n🎬 Step 5: Rendering final MP4 video via FFmpeg...")
     # Render storyboard video using per-line images
-    from pathlib import Path
     image_dir = Path(__file__).parent / "photo" / "01"
     image_files = sorted([p for p in image_dir.glob("*.jpg")])
     if not image_files:
@@ -175,39 +186,22 @@ def run_pipeline(
     print("="*50 + "\n")
 
     # -------------------------------------------------
-    # Upload to Supabase and post to Instagram
+    # Upload to storage and publish to Instagram
     # -------------------------------------------------
     try:
-        # Use shared utilities from the education project for storage upload and
-        # Instagram publishing. Import them as a package (the way the education
-        # project does) so their relative imports resolve. Adding the 07_publish
-        # folder directly to sys.path would break `from .storage import ...`.
-        import importlib
-        education_root = Path('/home/aditys/code/education')
-        if str(education_root) not in sys.path:
-            sys.path.insert(0, str(education_root))
-        publish_module = importlib.import_module('07_publish.instagram')
-        upload_file = publish_module.upload_file
-        publish_reel_pipeline = publish_module.publish_reel_pipeline
-        import asyncio
+        caption = f"New Reel: {topic} - generated with AI 🎬"
 
-        # Upload video to storage and get public URL
-        video_filename = final_video.name
-        public_url = upload_file(str(final_video), object_name=video_filename)
-        logger.info(f"📤 Uploaded to storage: {public_url}")
-
-        # Prepare caption
-        caption = f"New Reel: {topic} – generated with AI 🎬"
-
-        # Publish to Instagram
+        # publish_reel_pipeline uploads the video to storage and posts it, so we
+        # must not upload it separately here (that would store it twice).
         publish_result = asyncio.run(publish_reel_pipeline(
             video_path=str(final_video),
             caption=caption,
             job_id=workflow.job_id,
         ))
+        workflow.state["publish_result"] = publish_result
         logger.info(f"📱 Instagram publish result: {publish_result}")
-    except Exception as e:
-        logger.error(f"⚠️ Upload or Instagram posting failed: {e}")
+    except Exception:
+        logger.exception("⚠️ Upload or Instagram posting failed")
 
     return workflow.state
 
@@ -217,4 +211,8 @@ if __name__ == "__main__":
     parser.add_argument("--ratio", type=str, default="9:16", choices=["9:16", "16:9", "1:1"], help="Video aspect ratio")
     args = parser.parse_args()
 
-    run_pipeline(topic=args.topic, aspect_ratio=args.ratio)
+    try:
+        run_pipeline(topic=args.topic, aspect_ratio=args.ratio)
+    except Exception:
+        logger.exception("❌ Pipeline failed.")
+        sys.exit(1)

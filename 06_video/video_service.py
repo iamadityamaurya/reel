@@ -1,50 +1,12 @@
-import os
-import subprocess
+"""Video rendering (side-by-side characters with burned-in ASS subtitles)."""
+
 import logging
+import subprocess
 from pathlib import Path
-from typing import Dict, Tuple, Optional
-from PIL import Image, ImageDraw, ImageFont
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-class ImageManager:
-    @staticmethod
-    def create_default_avatar(name: str, color: Tuple[int, int, int], pose_label: str, output_path: Path):
-        """Generates a clean vector-like placeholder avatar PNG if user hasn't uploaded custom images."""
-        w, h = 400, 700
-        img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(img)
-
-        # Draw character silhouette / body representation
-        # Head
-        draw.ellipse([140, 60, 260, 180], fill=color)
-        # Body
-        draw.rounded_rectangle([110, 190, 290, 480], radius=30, fill=color)
-        # Legs
-        draw.rectangle([130, 480, 180, 660], fill=color)
-        draw.rectangle([220, 480, 270, 660], fill=color)
-
-        # Pose specific details
-        if "pocket" in pose_label.lower():
-            # One hand in pocket indication
-            draw.rectangle([90, 320, 120, 420], fill=color)
-        else:
-            # Thinking pose hand near head
-            draw.line([(290, 320), (320, 200), (250, 150)], fill=color, width=25)
-
-        # Text Label
-        try:
-            font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", 28)
-        except Exception:
-            font = ImageFont.load_default()
-
-        bbox = draw.textbbox((0, 0), name, font=font)
-        tw = bbox[2] - bbox[0]
-        draw.text(((w - tw) // 2, 660), name, fill=(40, 40, 40), font=font)
-
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        img.save(output_path, "PNG")
-        return output_path
 
 class VideoRenderer:
     def __init__(self, aspect_ratio: str = "9:16"):
@@ -69,17 +31,17 @@ class VideoRenderer:
         Renders side-by-side 2-character video with audio track and burned-in ASS subtitles via FFmpeg.
         """
         output_mp4_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         # Prepare layout filter
         # Canvas size: width x height
         # Character A on Left, Character B on Right
         # Scale characters to fit within half frame height nicely
         char_w = int(self.width * 0.42)
         char_h = int(self.height * 0.55)
-        
+
         pos_a_x = int(self.width * 0.06)
         pos_a_y = int(self.height * 0.40)
-        
+
         pos_b_x = int(self.width * 0.52)
         pos_b_y = int(self.height * 0.40)
 
