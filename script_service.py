@@ -94,16 +94,12 @@ Return ONLY valid JSON with this exact structure:
         """
         if not isinstance(text, str):
             return text
-        replacements = {
-            "\u2014": "-",  # em dash
-            "\u2013": "-",  # en dash
-            "\u2012": "-",  # figure dash
-            "\u2015": "-",  # horizontal bar
-            "\u2011": "-",  # non-breaking hyphen
-        }
-        for bad, good in replacements.items():
-            text = text.replace(bad, good)
-        return text.strip()
+        # Long dashes read as a pause, so keep a space around the plain hyphen.
+        for dash in ("\u2014", "\u2013", "\u2012", "\u2015"):
+            text = text.replace(dash, " - ")
+        # A non-breaking hyphen is just a hyphen, so keep it attached.
+        text = text.replace("\u2011", "-")
+        return " ".join(text.split())
 
     def _fallback_script(self, title: str) -> Dict[str, Any]:
         return {
