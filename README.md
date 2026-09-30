@@ -1,80 +1,108 @@
 # Reel Generator
 
-## Overview
-A **two‑person AI‑driven video reel** generator that creates short, engaging educational reels (9:16 aspect) from a topic. It automates:
-- Idea generation (Groq)
-- Script writing
-- Text‑to‑speech synthesis (Deepgram)
-- Subtitle generation (ASS/SRT)
-- Video rendering with character avatars
-- Upload to Supabase storage
-- Automatic publishing to Instagram via the Graph API
+A **two-person AI conversation reel** generator. Give it a topic and it produces a
+finished, captioned 9:16 short with two voices, a cover image, and an
+Instagram-ready caption, then publishes it.
 
-## Features
-- Dynamic prompt‑driven content creation
-- Customizable voice characters (Brian & Adam)
-- Beautiful subtitles with styling
-- Support for multiple image storyboards
-- Dry‑run mode for testing without external calls
+## Pipeline
+
+The source is split into numbered stage packages that run in order:
+
+| Stage | Package | What it does |
+| --- | --- | --- |
+| 1 | `01_ideas/` | Generates topic ideas with Groq (`idea_service.py`) |
+| 2 | `02_script/` | Writes the two-person dialogue script (`script_service.py`) |
+| 3 | `03_tts/` | Synthesizes each line with ElevenLabs and stitches the track (`audio_service.py`) |
+| 4 | `04_images/` | Character avatars (`image_service.py`) and the cover image (`cover.py`) |
+| 5 | `05_captions/` | Builds ASS/SRT subtitles with per-speaker highlight colors (`subtitle_service.py`) |
+| 6 | `06_video/` | Renders and burns the final MP4 (`video_service.py`) |
+| 7 | `07_publish/` | Generates the Instagram caption (`caption.py`), uploads media, and posts (`instagram.py`, `storage.py`) |
+
+Supporting modules: `main.py` (orchestrator), `config.py`, `utils.py`,
+`workflow_manager.py` (job state), `generate_ideas.py` (idea batch tool).
+
+Because the packages start with digits, they are imported with `importlib` inside
+`main.py` (`_load(...)`), not with a normal `import`.
 
 ## Prerequisites
-- Python 3.11+ and a virtual environment (`.venv`)
-- Access to:
-  - Groq API key (`GROQ_API_KEY`)
-  - Deepgram API key (`DEEPGRAM_API_KEY`)
-  - Supabase bucket credentials (`STORAGE_*`)
-  - Instagram Graph API credentials (`IG_USER_ID`, `IG_ACCESS_TOKEN`)
-- FFmpeg installed and available on `$PATH`
+
+- Python 3.11+ and a virtual environment (`.venv`)
+- [FFmpeg](https://ffmpeg.org/) and `ffprobe` on `$PATH`
+- Accounts / keys for:
+  - Groq (ideas, script, captions)
+  - ElevenLabs (text to speech)
+  - Cloud storage (Supabase S3, AWS S3, or Cloudflare R2)
+  - Instagram Graph API (a professional/business account)
 
 ## Installation
+
 ```bash
-# Clone repository (already done)
 cd /home/aditys/code/reel
 
-# Create and activate virtual environment
 python3 -m venv .venv
 source .venv/bin/activate
 
-# Install dependencies
 pip install -r requirements.txt
 ```
 
 ## Configuration
+
 Copy the example environment file and fill in your secrets:
+
 ```bash
-cp .env.example .env   # edit the file afterwards
+cp .env.example .env   # then edit .env
 ```
-Key variables:
-- `GROQ_API_KEY`
-- `DEEPGRAM_API_KEY`
-- `STORAGE_ENDPOINT_URL`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY`, `STORAGE_BUCKET`, `STORAGE_PUBLIC_BASE_URL`
-- `IG_USER_ID`, `IG_ACCESS_TOKEN`
-- `DEFAULT_VOICE_A`, `DEFAULT_VOICE_B` (optional)
-- `DRY_RUN_MODE=true` to simulate uploads/publishing
+
+| Variable | Purpose |
+| --- | --- |
+| `GROQ_API_KEY`, `GROQ_MODEL` | LLM access for ideas, script, captions |
+| `ELEVENLABS_API_KEY`, `ELEVENLABS_MODEL_ID` | Text to speech |
+| `DEFAULT_VOICE_A`, `DEFAULT_VOICE_B` | ElevenLabs voice IDs for Alex and Sam |
+| `STORAGE_*` | Cloud bucket used for the video and cover |
+| `IG_USER_ID`, `IG_ACCESS_TOKEN` | Instagram publishing |
+| `DRY_RUN_MODE` | `true` simulates uploads/publishing |
+| `COVER_INTRO_SEC` | Seconds the cover is shown as the first frame (default `1.5`, `0` disables) |
 
 ## Usage
-Run the pipeline with a topic (default *Git vs GitHub*):
+
+Run the full pipeline for a topic (default *Git vs GitHub*):
+
 ```bash
 python3 main.py --topic "Docker vs Kubernetes"
 ```
-The script will:
-1. Generate ideas and pick one.
-2. Produce a dialogue script.
-3. Synthesize voice audio.
-4. Create subtitles.
-5. Render the final MP4.
-6. Upload to Supabase and publish to Instagram.
 
-All artefacts are stored under `jobs/<job_id>/`.
+It generates ideas, writes the script, synthesizes audio, builds subtitles and a
+cover, renders the MP4, then generates a caption and publishes (unless
+`DRY_RUN_MODE=true`).
 
-## Adding New Images
-Place your storyboard images inside `photo/01/` (or another folder) and update the path in `main.py` if needed. Images are cycled through for each dialogue line.
+Generate a batch of ideas to a JSON file without rendering anything:
 
-## Dry‑Run Mode
-Set `DRY_RUN_MODE=true` in `.env` to skip real uploads and Instagram calls. The pipeline will log mock URLs and IDs.
+```bash
+python3 generate_ideas.py --topic "Everyday tech" --count 20
+# writes data/ideas.json
+```
+
+All artefacts for a run are stored under `jobs/<job_id>/` (audio, subtitles,
+storyboard segments, `cover.jpg`, and `final_video.mp4`).
+
+## Storyboard images
+
+Place the images used behind the dialogue inside `photo/01/` as `.jpg` files.
+They are cycled one per line, and the first image is also the base for the
+cover. The cover has the idea title overlaid on a darkened lower half.
+
+## Dry-run mode
+
+Set `DRY_RUN_MODE=true` in `.env` to skip real uploads and Instagram calls. The
+pipeline still renders the video and logs mock URLs and IDs.
+
+## Notes
+
+- Scripts are written in simple, everyday words and avoid long dashes.
+- Subtitles highlight each speaker in a different color: Alex is yellow, Sam is cyan.
+- The cover image is used as the reel's first frame (for `COVER_INTRO_SEC`
+  seconds) and as the Instagram cover.
 
 ## License
-This project is provided under the MIT License. See `LICENSE` for details.
 
----
-*Generated by Antigravity AI assistant*
+Provided under the MIT License.

@@ -41,3 +41,21 @@ def retry_call(
 
     assert last_exc is not None
     raise last_exc
+
+
+_LONG_DASHES = ("\u2014", "\u2013", "\u2012", "\u2015")  # em, en, figure, horizontal bar
+
+
+def clean_text(text):
+    """
+    Replace long dashes with a spaced hyphen and non-breaking hyphens with '-'.
+
+    Returns the text with runs of whitespace collapsed. Non-string input is
+    returned unchanged.
+    """
+    if not isinstance(text, str):
+        return text
+    for dash in _LONG_DASHES:
+        text = text.replace(dash, " - ")
+    text = text.replace("\u2011", "-")  # non-breaking hyphen
+    return " ".join(text.split())

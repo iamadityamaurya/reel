@@ -48,7 +48,8 @@ class SubtitleService:
         Generates modern Instagram Reel dynamic animated ASS subtitles:
         - Big bold white font with black outline & shadow.
         - Word-chunked short phrases (3 words per popup).
-        - Highlighted target word in vivid yellow (`\\c&H00FFFF&`).
+        - The last word of each chunk is highlighted in the speaker's colour:
+          Alex is yellow, Sam is cyan, so viewers can tell who is talking.
         - Positioned cleanly in lower third of 9:16 canvas (`PlayRes: 1080x1920`).
         """
         header = f"""[Script Info]
@@ -61,16 +62,24 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: ReelStyle, Liberation Sans,{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H90000000,1,0,0,0,100,100,0,0,1,6,3,2,60,60,{margin_v},1
+Style: AlexStyle, Liberation Sans,{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H90000000,1,0,0,0,100,100,0,0,1,6,3,2,60,60,{margin_v},1
+Style: SamStyle, Liberation Sans,{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H90000000,1,0,0,0,100,100,0,0,1,6,3,2,60,60,{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
         events = []
-        yellow_start = r"{\c&H00FFFF&}"
+        # ASS colours are &HAABBGGRR. Yellow = &H00FFFF, cyan = &HFFFF00.
+        speaker_styles = {
+            "character_a": (r"{\c&H00FFFF&}", "AlexStyle"),
+            "character_b": (r"{\c&HFFFF00&}", "SamStyle"),
+        }
         white_start = r"{\c&HFFFFFF&}"
 
         for d, t in zip(dialogue, timings):
+            highlight_start, style_name = speaker_styles.get(
+                d.get("speaker"), speaker_styles["character_a"]
+            )
             line_start = t["start"]
             line_end = t["end"]
             line_duration = t["duration"]
@@ -88,16 +97,16 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 start_str = self.format_timestamp(c_start)
                 end_str = self.format_timestamp(c_end)
 
-                # Format chunk: highlight last word in bold yellow for viral caption look
+                # Format chunk: highlight last word in the speaker's colour for a viral look
                 words = chunk.split()
                 if len(words) > 1:
                     normal_part = " ".join(words[:-1])
                     highlight_word = words[-1]
-                    formatted_text = f"{normal_part} {yellow_start}{highlight_word}{white_start}"
+                    formatted_text = f"{normal_part} {highlight_start}{highlight_word}{white_start}"
                 else:
-                    formatted_text = f"{yellow_start}{chunk}{white_start}"
+                    formatted_text = f"{highlight_start}{chunk}{white_start}"
 
-                events.append(f"Dialogue: 0,{start_str},{end_str},ReelStyle,,0,0,0,,{formatted_text}")
+                events.append(f"Dialogue: 0,{start_str},{end_str},{style_name},,0,0,0,,{formatted_text}")
 
         output_ass_path.parent.mkdir(parents=True, exist_ok=True)
         with open(output_ass_path, "w", encoding="utf-8") as f:

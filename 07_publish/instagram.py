@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import time
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 import httpx
@@ -26,7 +27,11 @@ def _make_client(timeout: float) -> httpx.AsyncClient:
     )
 
 
-async def create_reel_container(video_url: str, caption: str) -> str:
+async def create_reel_container(
+    video_url: str,
+    caption: str,
+    cover_url: Optional[str] = None,
+) -> str:
     """
     Step 1: Create an Instagram Reel container from a public video URL.
     Returns the container ID (creation_id).
@@ -44,6 +49,8 @@ async def create_reel_container(video_url: str, caption: str) -> str:
         "caption": caption,
         "access_token": access_token,
     }
+    if cover_url:
+        payload["cover_url"] = cover_url
 
     async with _make_client(45.0) as client:
         response = await client.post(endpoint, data=payload)
@@ -150,10 +157,11 @@ async def publish_reel_pipeline(
     video_path: str,
     caption: str,
     job_id: Optional[str] = None,
+    cover_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Full automated pipeline:
-    1. Upload local video to cloud storage bucket
+    1. Upload local video (and optional cover) to cloud storage bucket
     2. Create Reel container via Graph API
     3. Poll until container transcoding is FINISHED
     4. Publish Reel
@@ -173,8 +181,23 @@ async def publish_reel_pipeline(
     object_name = f"reels/{job_id}/reel.mp4" if job_id else f"reels/reel_{int(time.time())}.mp4"
     public_url = upload_file(video_path, object_name=object_name)
 
+    # 1b. Upload the cover image (used as the Reel thumbnail in the feed).
+    cover_url: Optional[str] = None
+    if cover_path and Path(cover_path).exists():
+        cover_object = (
+            f"reels/{job_id}/cover.jpg"
+            if job_id
+            else f"reels/cover_{int(time.time())}.jpg"
+        )
+        try:
+            cover_url = upload_file(cover_path, object_name=cover_object)
+        except Exception:
+            logger.exception("Cover upload failed; publishing without a custom cover.")
+
     # 2. Create container
-    container_id = await create_reel_container(video_url=public_url, caption=caption)
+    container_id = await create_reel_container(
+        video_url=public_url, caption=caption, cover_url=cover_url
+    )
 
     # 3. Poll status
     await wait_for_container_status(container_id)
@@ -188,6 +211,7 @@ async def publish_reel_pipeline(
     return {
         "status": "success",
         "public_url": public_url,
+        "cover_url": cover_url,
         "container_id": container_id,
         "media_id": media_id,
         "permalink": permalink or f"https://www.instagram.com/p/{media_id}",

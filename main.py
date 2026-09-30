@@ -27,8 +27,10 @@ ScriptService = _load("02_script.script_service", "ScriptService")
 TTSService = _load("03_tts.audio_service", "TTSService")
 AudioProcessor = _load("03_tts.audio_service", "AudioProcessor")
 ImageManager = _load("04_images.image_service", "ImageManager")
+CoverGenerator = _load("04_images.cover", "CoverGenerator")
 SubtitleService = _load("05_captions.subtitle_service", "SubtitleService")
 VideoRenderer = _load("06_video.video_service", "VideoRenderer")
+CaptionService = _load("07_publish.caption", "CaptionService")
 publish_reel_pipeline = _load("07_publish.instagram", "publish_reel_pipeline")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -94,10 +96,15 @@ def run_pipeline(
         dur = tts.synthesize_line(item['text'], voice, out_line_path)
         line_files.append((out_line_path, dur))
 
-    # Combine audio
+    # Combine audio. A leading silence window (intro_sec) leaves room for the
+    # cover image as the first frame; all timings are shifted by it so captions
+    # stay in sync.
     final_audio_path = workflow.job_dir / "full_dialogue.mp3"
+    intro_sec = max(config.COVER_INTRO_SEC, 0.0)
     print("   • Concatenating dialogue track with pauses...")
-    timings = AudioProcessor.stitch_dialogue_audio(line_files, final_audio_path, pause_between_sec=0.3)
+    timings = AudioProcessor.stitch_dialogue_audio(
+        line_files, final_audio_path, pause_between_sec=0.3, intro_sec=intro_sec
+    )
     workflow.state["audio_path"] = str(final_audio_path)
 
     # Step 5: Subtitle Generation
@@ -123,7 +130,36 @@ def run_pipeline(
     
     # Initialize renderer for dimensions
     renderer = VideoRenderer(aspect_ratio=aspect_ratio)
+
+    # Build the cover from the first storyboard image with the idea title on top.
+    # It is used as the reel's first frame (when COVER_INTRO_SEC > 0) and as the
+    # Instagram cover image.
+    cover_path = workflow.job_dir / "cover.jpg"
+    print("   • Building cover image with the title overlay...")
+    CoverGenerator.create_cover(
+        base_image=image_files[0],
+        title=selected_idea["title"],
+        output_path=cover_path,
+        width=renderer.width,
+        height=renderer.height,
+    )
+
     segment_paths = []
+    if intro_sec > 0:
+        # Static cover segment covering [0, intro_sec). The first dialogue line
+        # starts exactly at intro_sec, so this fills the lead-in window.
+        intro_path = workflow.job_dir / "segment_intro.mp4"
+        subprocess.run([
+            "ffmpeg", "-y",
+            "-loop", "1", "-i", str(cover_path),
+            "-t", f"{intro_sec:.3f}",
+            "-vf", f"scale={renderer.width}:{renderer.height}",
+            "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+            "-pix_fmt", "yuv420p",
+            str(intro_path)
+        ], check=True)
+        segment_paths.append(intro_path)
+
     for idx, timing in enumerate(timings):
         # Each segment runs from this line's start to the next line's start, so it
         # absorbs the inter-line pause. Otherwise the pauses vanish from the video
@@ -183,13 +219,23 @@ def run_pipeline(
     print(f"📹 Final Video Path: {final_video.resolve()}")
     print(f"🎵 Audio Track Path: {final_audio_path.resolve()}")
     print(f"📄 SRT Subtitles Path: {srt_path.resolve()}")
+    print(f"🖼️  Cover Image Path: {cover_path.resolve()}")
     print("="*50 + "\n")
 
     # -------------------------------------------------
     # Upload to storage and publish to Instagram
     # -------------------------------------------------
     try:
-        caption = f"New Reel: {topic} - generated with AI 🎬"
+        try:
+            print("✍️ Generating Instagram caption and hashtags...")
+            caption = CaptionService().generate_caption(
+                selected_idea["title"], selected_idea.get("summary", "")
+            )
+        except Exception:
+            logger.exception("Caption generation failed; using fallback caption.")
+            caption = CaptionService.fallback_caption(selected_idea["title"])
+        workflow.state["caption"] = caption
+        print(f"   ✓ Caption: {caption[:140]}")
 
         # publish_reel_pipeline uploads the video to storage and posts it, so we
         # must not upload it separately here (that would store it twice).
@@ -197,6 +243,7 @@ def run_pipeline(
             video_path=str(final_video),
             caption=caption,
             job_id=workflow.job_id,
+            cover_path=str(cover_path) if cover_path.exists() else None,
         ))
         workflow.state["publish_result"] = publish_result
         logger.info(f"📱 Instagram publish result: {publish_result}")

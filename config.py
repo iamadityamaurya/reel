@@ -21,6 +21,10 @@ ELEVENLABS_MODEL_ID = os.getenv("ELEVENLABS_MODEL_ID", "eleven_multilingual_v2")
 DEFAULT_VOICE_A = os.getenv("DEFAULT_VOICE_A", "")
 DEFAULT_VOICE_B = os.getenv("DEFAULT_VOICE_B", "")
 
+# Cover image is shown as the reel's first frame for this many seconds before the
+# dialogue starts. Set to 0 to disable the cover intro.
+COVER_INTRO_SEC = float(os.getenv("COVER_INTRO_SEC", "1.5"))
+
 # Cloud storage (Supabase S3 / AWS S3 / Cloudflare R2)
 # Consumed by the local storage.py / instagram.py publishing modules.
 STORAGE_PROVIDER = os.getenv("STORAGE_PROVIDER", "mock")

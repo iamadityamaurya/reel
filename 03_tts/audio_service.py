@@ -65,19 +65,25 @@ class AudioProcessor:
     def stitch_dialogue_audio(
         line_files: List[Tuple[Path, float]], 
         output_concat_path: Path, 
-        pause_between_sec: float = 0.3
+        pause_between_sec: float = 0.3,
+        intro_sec: float = 0.0
     ) -> List[Dict[str, Any]]:
         """
         Combines individual audio files into a single continuous track with padding.
         Returns precise start and end timing data for each dialogue line for subtitles.
+
+        ``intro_sec`` prepends that many seconds of silence to the track and shifts
+        every timing by the same amount. The renderer uses this window to show the
+        cover image as the first frame while keeping audio and captions in sync.
         """
         output_concat_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Compute subtitle timings and the ordered list of audio segments.
         # The pauses are part of the timeline, so each line's end leaves room for
-        # the pause before the next line's start.
+        # the pause before the next line's start. The intro window comes first,
+        # so dialogue always starts at intro_sec.
         timings = []
-        current_time = 0.0
+        current_time = intro_sec
         for idx, (file_path, duration) in enumerate(line_files):
             start_t = current_time
             end_t = current_time + duration
@@ -104,6 +110,16 @@ class AudioProcessor:
             ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
 
         segments: List[Path] = []
+        if intro_sec > 0:
+            intro_silence = output_concat_path.parent / "intro_silence.wav"
+            subprocess.run([
+                "ffmpeg", "-y", "-f", "lavfi",
+                "-i", "anullsrc=r=44100:cl=stereo",
+                "-t", str(intro_sec),
+                str(intro_silence)
+            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            segments.append(intro_silence)
+
         for idx, (file_path, _) in enumerate(line_files):
             segments.append(Path(file_path))
             if pause_between_sec > 0 and idx < len(line_files) - 1:
