@@ -1,0 +1,32 @@
+# Python & virtual environment
+__pycache__/
+*.py[cod]
+*.sqlite3
+*.log
+*.env
+.venv/
+.env
+
+# IDE / editor files
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Dependency directories
+node_modules/
+
+# Media / output folders
+jobs/
+media/
+
+# Temporary files
+*.tmp
+*.bak
+
+# Jupyter notebooks
+.ipynb_checkpoints/
