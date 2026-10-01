@@ -30,3 +30,4 @@ media/
 
 # Jupyter notebooks
 .ipynb_checkpoints/
+video/*

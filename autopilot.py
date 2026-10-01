@@ -6,7 +6,7 @@ Each cycle:
   1. Picks the next idea from Supabase with ``video_generated = false``,
      starting at ``index`` 1 and moving upward.
   2. Runs the full pipeline on it (script, voice, subtitles, video, publish)
-     using the photo/01 storyboard.
+     using the photo/01 storyboard and the split-screen layout by default.
   3. Marks that idea row as ``video_generated = true``.
 
 Cycles are spaced by a random interval between 1h 00m and 1h 10m.
@@ -17,6 +17,7 @@ Usage:
     python3 autopilot.py --dry-run            # show the next idea, change nothing
     python3 autopilot.py --min-minutes 60 --max-minutes 70
     python3 autopilot.py --photo-set 01
+    python3 autopilot.py --layout full         # opt out of the split layout
 """
 
 import argparse
@@ -51,7 +52,7 @@ def fetch_next_idea(store) -> "dict | None":
     return idea
 
 
-def run_once(photo_set: str = "01") -> bool:
+def run_once(photo_set: str = "01", layout: str = "split") -> bool:
     """Run a single cycle. Returns True if a reel was produced."""
     store = SupabaseIdeaStore()
 
@@ -70,8 +71,11 @@ def run_once(photo_set: str = "01") -> bool:
     topic = idea.get("topic") or title or "reel"
     logger.info("▶️  Idea #%s: %s", index, title)
 
-    logger.info("🎬 Rendering reel for idea #%s using photo set '%s'...", index, photo_set)
-    state = run_pipeline(topic=topic, idea=idea, photo_set=photo_set)
+    logger.info(
+        "🎬 Rendering reel for idea #%s using photo set '%s' (layout: %s)...",
+        index, photo_set, layout,
+    )
+    state = run_pipeline(topic=topic, idea=idea, photo_set=photo_set, layout=layout)
     video_path = state.get("video_path")
     logger.info("✅ Finished idea #%s. Video: %s", index, video_path)
 
@@ -97,6 +101,8 @@ def main() -> int:
                         help="Maximum wait between cycles in minutes (default: 70)")
     parser.add_argument("--photo-set", type=str, default="01",
                         help="Storyboard folder under photo/ to use (default: 01)")
+    parser.add_argument("--layout", type=str, default="split", choices=["full", "split"],
+                        help="Video layout (default: split, i.e. characters on top and gameplay below)")
     parser.add_argument("--once", action="store_true",
                         help="Run a single cycle and exit")
     parser.add_argument("--dry-run", action="store_true",
@@ -126,13 +132,13 @@ def main() -> int:
         return 0
 
     logger.info(
-        "🚀 Autopilot started. Interval %.0f-%.0f min, photo set '%s'.",
-        args.min_minutes, args.max_minutes, args.photo_set,
+        "🚀 Autopilot started. Interval %.0f-%.0f min, photo set '%s', layout '%s'.",
+        args.min_minutes, args.max_minutes, args.photo_set, args.layout,
     )
 
     while True:
         try:
-            run_once(photo_set=args.photo_set)
+            run_once(photo_set=args.photo_set, layout=args.layout)
         except KeyboardInterrupt:
             logger.info("Stopped by user.")
             return 0

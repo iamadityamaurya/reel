@@ -64,6 +64,7 @@ cp .env.example .env   # then edit .env
 | `IG_USER_ID`, `IG_ACCESS_TOKEN` | Instagram publishing |
 | `DRY_RUN_MODE` | `true` simulates uploads/publishing |
 | `COVER_INTRO_SEC` | Seconds the cover is shown as the first frame (default `1.5`, `0` disables) |
+| `LAYOUT`, `SPLIT_TOP_RATIO` | Default video layout (`full`/`split`) and top-panel share |
 
 ## Recording ideas in Supabase
 
@@ -157,6 +158,26 @@ lower half). Force a specific folder with `--photo-set`:
 python3 main.py --topic "Docker vs Kubernetes" --photo-set 02
 ```
 
+## Split-screen layout
+
+Add a background clip (for example gameplay footage) to the `video/` folder and
+run with `--layout split`. The two characters are cropped to their content, placed
+in a white panel on top with the title as a header, and the background clip is
+looped underneath. Subtitles are burned over the clip.
+
+```bash
+python3 main.py --topic "Git vs GitHub" --layout split --photo-set 01 --no-publish
+```
+
+- `--gameplay` picks a clip by path, by filename inside `video/`, or `random`
+  (default).
+- The split cover (character panel + a frame of the clip) is the reel's first
+  frame and the Instagram cover.
+- Add `--no-publish` to render locally without posting.
+- `autopilot.py` defaults to this layout; pass `--layout full` to it to opt out.
+- Tune the split with `SPLIT_TOP_RATIO` (default `0.583`, i.e. characters on top
+  ~58%, clip below ~42%).
+
 ## Dry-run mode
 
 Set `DRY_RUN_MODE=true` in `.env` to skip real uploads and Instagram calls. The
@@ -167,7 +188,7 @@ pipeline still renders the video and logs mock URLs and IDs.
 - Scripts are written in simple, everyday words and avoid long dashes.
 - Subtitles highlight each speaker in a different color: Alex is yellow, Sam is cyan.
 - The cover image is used as the reel's first frame (for `COVER_INTRO_SEC`
-  seconds) and as the Instagram cover.
+  seconds) and as the Instagram cover. It shows the idea's title.
 
 ## License
 

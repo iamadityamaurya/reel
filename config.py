@@ -33,6 +33,15 @@ DEFAULT_VOICE_B = os.getenv("DEFAULT_VOICE_B", "")
 # dialogue starts. Set to 0 to disable the cover intro.
 COVER_INTRO_SEC = float(os.getenv("COVER_INTRO_SEC", "1.5"))
 
+# Layout: "full" fills the whole frame with one storyboard image per line.
+# "split" puts the two characters in the top part and a looping background clip
+# (e.g. gameplay footage from the video/ folder) in the bottom part.
+LAYOUT = os.getenv("LAYOUT", "full")
+# Fraction of the 9:16 frame given to the character panel in the split layout.
+SPLIT_TOP_RATIO = float(os.getenv("SPLIT_TOP_RATIO", "0.583"))
+# Folder searched for background clips used by the split layout.
+GAMEPLAY_DIR = PROJECT_ROOT / "video"
+
 # Cloud storage (Supabase S3 / AWS S3 / Cloudflare R2)
 # Consumed by the local storage.py / instagram.py publishing modules.
 STORAGE_PROVIDER = os.getenv("STORAGE_PROVIDER", "mock")
