@@ -111,6 +111,36 @@ Add `--no-supabase` to write only the JSON file.
 All artefacts for a run are stored under `jobs/<job_id>/` (audio, subtitles,
 storyboard segments, `cover.jpg`, and `final_video.mp4`).
 
+## Autopilot (unattended posting)
+
+`autopilot.py` posts reels on its own. Each cycle it:
+
+1. Picks the next idea from Supabase with `video_generated = false`, starting at
+   `index` 1 and moving upward.
+2. Runs the full pipeline on it using the `photo/01` storyboard.
+3. Marks that row as `video_generated = true`.
+
+Cycles are spaced by a random interval between 1h 00m and 1h 10m.
+
+```bash
+python3 autopilot.py                 # run forever
+python3 autopilot.py --once          # a single cycle
+python3 autopilot.py --dry-run       # show the next idea, change nothing
+python3 autopilot.py --min-minutes 60 --max-minutes 70 --photo-set 01
+```
+
+Stop it with `Ctrl+C`. Keep it running under `nohup`, `tmux`, or a systemd
+service if you want it to survive a logout.
+
+The `service_role` role needs UPDATE permission on the table, otherwise the
+autopilot cannot flip `video_generated` to true. If your table already exists,
+run this once in the Supabase SQL editor:
+
+```sql
+grant usage on schema public to service_role;
+grant select, insert, update, delete on public.ideas to service_role;
+```
+
 ## Storyboard images
 
 Storyboards live in subfolders of `photo/`, for example:

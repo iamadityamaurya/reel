@@ -1,5 +1,5 @@
 -- Ideas table for the reel generator.
--- Run this ONCE in the Supabase SQL editor:
+-- Safe to run more than once in the Supabase SQL editor:
 -- https://supabase.com/dashboard/project/jszsasfibqdmtbejbybp/sql/new
 --
 -- Columns:
@@ -22,10 +22,16 @@ create table if not exists public.ideas (
     created_at timestamptz not null default now()
 );
 
+-- The generator talks to PostgREST with the service_role key, so that role needs
+-- table privileges. Without the UPDATE grant the autopilot cannot flip
+-- video_generated to true (PostgREST returns 42501 "permission denied").
+grant usage on schema public to service_role;
+grant select, insert, update, delete on public.ideas to service_role;
+
 -- Keep anon access closed; the generator uses the service_role key, which
 -- bypasses row level security. Add a read policy here if you later want the
 -- anon key to read ideas.
 alter table public.ideas enable row level security;
 
 create index if not exists ideas_video_generated_idx
-    on public.ideas (video_generated, created_at desc);
+    on public.ideas (video_generated, "index", created_at);

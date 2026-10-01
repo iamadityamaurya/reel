@@ -91,7 +91,8 @@ def run_pipeline(
     voice_b: str = config.DEFAULT_VOICE_B,
     aspect_ratio: str = "9:16",
     job_id: Optional[str] = None,
-    photo_set: Optional[str] = None
+    photo_set: Optional[str] = None,
+    idea: Optional[dict] = None
 ):
     workflow = WorkflowManager(job_id=job_id)
     print(f"\n🚀 Starting Two-Person Reel Workflow (Job ID: {workflow.job_id})")
@@ -112,30 +113,37 @@ def run_pipeline(
         print("🎨 Generating Character B placeholder image...")
         ImageManager.create_default_avatar("Sam (Character B)", (39, 174, 96), "thinking", char_b_path)
 
-    # Step 2: Generate Ideas
+    # Step 2: Pick an idea (either supplied, e.g. from Supabase, or freshly generated).
     workflow.update_status("GENERATING_IDEAS")
-    print("💡 Step 1: Generating topic ideas via Groq...")
-    idea_svc = IdeaService()
-    ideas = idea_svc.generate_ideas(topic=topic, count=3)
-    selected_idea = ideas[0]
-    workflow.state["idea"] = selected_idea
-    print(f"   ✓ Selected Idea: '{selected_idea['title']}'")
+    if idea:
+        selected_idea = idea
+        topic = selected_idea.get("topic") or selected_idea.get("title", topic)
+        workflow.state["idea"] = selected_idea
+        print(f"💡 Step 1: Using supplied idea: '{selected_idea.get('title', '')}'")
+    else:
+        print("💡 Step 1: Generating topic ideas via Gemini...")
+        idea_svc = IdeaService()
+        ideas = idea_svc.generate_ideas(topic=topic, count=3)
+        selected_idea = ideas[0]
+        workflow.state["idea"] = selected_idea
+        print(f"   ✓ Selected Idea: '{selected_idea['title']}'")
 
-    # Record every generated idea in Supabase (video_generated stays false).
-    try:
-        store = SupabaseIdeaStore()
-        if store.is_configured:
-            saved = store.save_ideas(ideas, topic=topic, tone="")
-            workflow.state["saved_ideas"] = len(saved)
-            print(f"   ✓ Recorded {len(saved)} idea(s) in Supabase table '{store.table}'")
-    except Exception:
-        logger.exception("Could not record ideas in Supabase (continuing).")
+        # Record every generated idea in Supabase (video_generated stays false).
+        try:
+            store = SupabaseIdeaStore()
+            if store.is_configured:
+                saved = store.save_ideas(ideas, topic=topic, tone="")
+                workflow.state["saved_ideas"] = len(saved)
+                print(f"   ✓ Recorded {len(saved)} idea(s) in Supabase table '{store.table}'")
+        except Exception:
+            logger.exception("Could not record ideas in Supabase (continuing).")
 
     # Step 3: Script Generation
     workflow.update_status("GENERATING_SCRIPT")
     print("\n📝 Step 2: Writing 2-person script...")
     script_svc = ScriptService()
-    script = script_svc.generate_script(selected_idea["title"], selected_idea["summary"])
+    idea_summary = selected_idea.get("summary") or selected_idea.get("hook") or ""
+    script = script_svc.generate_script(selected_idea["title"], idea_summary)
     workflow.state["script"] = script
     print(f"   ✓ Generated dialogue lines: {len(script['dialogue'])}")
     for line in script['dialogue']:

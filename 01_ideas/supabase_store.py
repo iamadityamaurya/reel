@@ -153,12 +153,17 @@ class SupabaseIdeaStore:
         return True
 
     # --------------------------------------------------------------------- read
-    def list_ideas(self, limit: int = 100, video_generated: Optional[bool] = None) -> List[Dict[str, Any]]:
+    def list_ideas(
+        self,
+        limit: int = 100,
+        video_generated: Optional[bool] = None,
+        order: str = "created_at.desc",
+    ) -> List[Dict[str, Any]]:
         if not self.is_configured:
             return []
         params = {
             "select": "*",
-            "order": "created_at.desc",
+            "order": order,
             "limit": str(limit),
         }
         if video_generated is not None:
@@ -169,5 +174,19 @@ class SupabaseIdeaStore:
             params=params,
             timeout=30.0,
         )
+        if response.status_code == 404 or "PGRST205" in response.text:
+            raise SupabaseTableMissingError(self._missing_table_message())
         response.raise_for_status()
         return response.json()
+
+    def next_unprocessed_idea(self) -> Optional[Dict[str, Any]]:
+        """
+        Return the next idea with ``video_generated = false``, starting from
+        ``index`` 1 and moving upward. Returns ``None`` when all are done.
+        """
+        rows = self.list_ideas(
+            limit=1,
+            video_generated=False,
+            order="index.asc,created_at.asc",
+        )
+        return rows[0] if rows else None
