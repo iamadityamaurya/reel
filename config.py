@@ -16,6 +16,14 @@ for d in [DATA_DIR, ASSETS_DIR, JOBS_DIR]:
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+
+# Idea generation uses Google Gemini. Groq is still used for the script + captions.
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_API_BASE = os.getenv(
+    "GEMINI_API_BASE", "https://generativelanguage.googleapis.com/v1beta"
+)
+
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
 ELEVENLABS_MODEL_ID = os.getenv("ELEVENLABS_MODEL_ID", "eleven_multilingual_v2")
 DEFAULT_VOICE_A = os.getenv("DEFAULT_VOICE_A", "")
@@ -33,6 +41,11 @@ STORAGE_PUBLIC_BASE_URL = os.getenv("STORAGE_PUBLIC_BASE_URL", "")
 STORAGE_ACCESS_KEY = os.getenv("STORAGE_ACCESS_KEY", "")
 STORAGE_SECRET_KEY = os.getenv("STORAGE_SECRET_KEY", "")
 STORAGE_ENDPOINT_URL = os.getenv("STORAGE_ENDPOINT_URL", "")
+
+# Supabase (PostgREST) - optional record of every generated idea.
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
+SUPABASE_IDEAS_TABLE = os.getenv("SUPABASE_IDEAS_TABLE", "ideas")
 
 # Instagram Graph API
 IG_USER_ID = os.getenv("IG_USER_ID", "")

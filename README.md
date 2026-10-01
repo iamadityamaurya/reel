@@ -10,7 +10,7 @@ The source is split into numbered stage packages that run in order:
 
 | Stage | Package | What it does |
 | --- | --- | --- |
-| 1 | `01_ideas/` | Generates topic ideas with Groq (`idea_service.py`) |
+| 1 | `01_ideas/` | Generates topic ideas with Gemini (`idea_service.py`) and records them in Supabase (`supabase_store.py`) |
 | 2 | `02_script/` | Writes the two-person dialogue script (`script_service.py`) |
 | 3 | `03_tts/` | Synthesizes each line with ElevenLabs and stitches the track (`audio_service.py`) |
 | 4 | `04_images/` | Character avatars (`image_service.py`) and the cover image (`cover.py`) |
@@ -55,13 +55,37 @@ cp .env.example .env   # then edit .env
 
 | Variable | Purpose |
 | --- | --- |
-| `GROQ_API_KEY`, `GROQ_MODEL` | LLM access for ideas, script, captions |
+| `GEMINI_API_KEY`, `GEMINI_MODEL` | Idea generation (Google Gemini) |
+| `GROQ_API_KEY`, `GROQ_MODEL` | Script and caption generation |
 | `ELEVENLABS_API_KEY`, `ELEVENLABS_MODEL_ID` | Text to speech |
 | `DEFAULT_VOICE_A`, `DEFAULT_VOICE_B` | ElevenLabs voice IDs for Alex and Sam |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `SUPABASE_IDEAS_TABLE` | Records generated ideas |
 | `STORAGE_*` | Cloud bucket used for the video and cover |
 | `IG_USER_ID`, `IG_ACCESS_TOKEN` | Instagram publishing |
 | `DRY_RUN_MODE` | `true` simulates uploads/publishing |
 | `COVER_INTRO_SEC` | Seconds the cover is shown as the first frame (default `1.5`, `0` disables) |
+
+## Recording ideas in Supabase
+
+Every generated idea is saved to a Supabase table so you have a record of what has
+been produced. Each row has:
+
+- `id` - unique Supabase id (uuid)
+- `index` - position of the idea in its batch, starting at `1`
+- `title`, `hook`, `summary` - the idea text
+- `topic`, `tone` - what was requested
+- `video_generated` - `false` for every new idea
+- `created_at`
+
+Create the table once by pasting `supabase/schema.sql` into the Supabase SQL
+editor, or run the checker which prints the SQL for you:
+
+```bash
+python3 setup_supabase.py
+```
+
+The SQL editor for this project:
+<https://supabase.com/dashboard/project/jszsasfibqdmtbejbybp/sql/new>
 
 ## Usage
 
@@ -79,17 +103,29 @@ Generate a batch of ideas to a JSON file without rendering anything:
 
 ```bash
 python3 generate_ideas.py --topic "Everyday tech" --count 20
-# writes data/ideas.json
+# writes data/ideas.json and saves the ideas to Supabase
 ```
+
+Add `--no-supabase` to write only the JSON file.
 
 All artefacts for a run are stored under `jobs/<job_id>/` (audio, subtitles,
 storyboard segments, `cover.jpg`, and `final_video.mp4`).
 
 ## Storyboard images
 
-Place the images used behind the dialogue inside `photo/01/` as `.jpg` files.
-They are cycled one per line, and the first image is also the base for the
-cover. The cover has the idea title overlaid on a darkened lower half.
+Storyboards live in subfolders of `photo/`, for example:
+
+- `photo/01/` is man + man
+- `photo/02/` is man + woman
+
+By default one folder is chosen **at random for each run** so the two characters
+stay consistent across the whole reel, and its images are cycled one per line.
+The first image is also the base for the cover (title overlaid on a darkened
+lower half). Force a specific folder with `--photo-set`:
+
+```bash
+python3 main.py --topic "Docker vs Kubernetes" --photo-set 02
+```
 
 ## Dry-run mode
 

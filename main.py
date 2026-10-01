@@ -5,13 +5,14 @@ Run this script end-to-end to generate complete conversational reels!
 """
 
 import sys
+import random
 import argparse
 import logging
 import asyncio
 import importlib
 import subprocess
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional, Tuple
 
 import config
 from workflow_manager import WorkflowManager
@@ -22,7 +23,55 @@ def _load(module_path: str, name: str):
     return getattr(importlib.import_module(module_path), name)
 
 
+_IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png")
+
+
+def discover_photo_sets(photo_root: Optional[Path] = None) -> "dict[str, List[Path]]":
+    """Return {folder_name: [sorted image paths]} for every subfolder of photo/."""
+    photo_root = photo_root or (Path(__file__).parent / "photo")
+    sets: "dict[str, List[Path]]" = {}
+    if not photo_root.is_dir():
+        return sets
+    for folder in sorted(photo_root.iterdir()):
+        if not folder.is_dir():
+            continue
+        images = sorted(
+            p for p in folder.iterdir()
+            if p.is_file() and p.suffix.lower() in _IMAGE_SUFFIXES
+        )
+        if images:
+            sets[folder.name] = images
+    return sets
+
+
+def select_photo_set(photo_set: Optional[str] = None) -> Tuple[Path, List[Path]]:
+    """
+    Pick one storyboard folder and return (folder, sorted images).
+
+    Each folder is a different character pairing (photo/01 is man + man,
+    photo/02 is man + woman), so by default a single folder is chosen at random
+    per run to keep the two characters consistent across the whole reel.
+    Pass ``photo_set`` (e.g. "01", "02") to force a specific folder.
+    """
+    photo_root = Path(__file__).parent / "photo"
+    sets = discover_photo_sets(photo_root)
+    if not sets:
+        raise FileNotFoundError(f"No storyboard images found under {photo_root}")
+
+    if photo_set and photo_set.lower() != "random":
+        if photo_set not in sets:
+            raise ValueError(
+                f"Unknown photo set '{photo_set}'. Available: {', '.join(sorted(sets))}"
+            )
+        chosen = photo_set
+    else:
+        chosen = random.choice(sorted(sets))
+
+    return photo_root / chosen, sets[chosen]
+
+
 IdeaService = _load("01_ideas.idea_service", "IdeaService")
+SupabaseIdeaStore = _load("01_ideas.supabase_store", "SupabaseIdeaStore")
 ScriptService = _load("02_script.script_service", "ScriptService")
 TTSService = _load("03_tts.audio_service", "TTSService")
 AudioProcessor = _load("03_tts.audio_service", "AudioProcessor")
@@ -41,7 +90,8 @@ def run_pipeline(
     voice_a: str = config.DEFAULT_VOICE_A,
     voice_b: str = config.DEFAULT_VOICE_B,
     aspect_ratio: str = "9:16",
-    job_id: Optional[str] = None
+    job_id: Optional[str] = None,
+    photo_set: Optional[str] = None
 ):
     workflow = WorkflowManager(job_id=job_id)
     print(f"\n🚀 Starting Two-Person Reel Workflow (Job ID: {workflow.job_id})")
@@ -70,6 +120,16 @@ def run_pipeline(
     selected_idea = ideas[0]
     workflow.state["idea"] = selected_idea
     print(f"   ✓ Selected Idea: '{selected_idea['title']}'")
+
+    # Record every generated idea in Supabase (video_generated stays false).
+    try:
+        store = SupabaseIdeaStore()
+        if store.is_configured:
+            saved = store.save_ideas(ideas, topic=topic, tone="")
+            workflow.state["saved_ideas"] = len(saved)
+            print(f"   ✓ Recorded {len(saved)} idea(s) in Supabase table '{store.table}'")
+    except Exception:
+        logger.exception("Could not record ideas in Supabase (continuing).")
 
     # Step 3: Script Generation
     workflow.update_status("GENERATING_SCRIPT")
@@ -122,12 +182,12 @@ def run_pipeline(
     # Step 6: Render Video via FFmpeg
     workflow.update_status("RENDERING_VIDEO")
     print("\n🎬 Step 5: Rendering final MP4 video via FFmpeg...")
-    # Render storyboard video using per-line images
-    image_dir = Path(__file__).parent / "photo" / "01"
-    image_files = sorted([p for p in image_dir.glob("*.jpg")])
-    if not image_files:
-        raise FileNotFoundError("Storyboard images not found in photo/01")
-    
+    # Render storyboard video using per-line images. A single photo set is chosen
+    # (randomly unless photo_set is given) and its images are cycled one per line.
+    image_dir, image_files = select_photo_set(photo_set)
+    workflow.state["photo_set"] = image_dir.name
+    print(f"   • Using storyboard set '{image_dir.name}' ({len(image_files)} images)")
+
     # Initialize renderer for dimensions
     renderer = VideoRenderer(aspect_ratio=aspect_ratio)
 
@@ -256,10 +316,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="AI Two-Person Conversation Video Generator")
     parser.add_argument("--topic", type=str, default="Git vs GitHub", help="Topic for the video reel")
     parser.add_argument("--ratio", type=str, default="9:16", choices=["9:16", "16:9", "1:1"], help="Video aspect ratio")
+    parser.add_argument(
+        "--photo-set",
+        type=str,
+        default="random",
+        help="Storyboard folder under photo/ to use (e.g. 01, 02) or 'random' to pick one per run",
+    )
     args = parser.parse_args()
 
     try:
-        run_pipeline(topic=args.topic, aspect_ratio=args.ratio)
+        run_pipeline(topic=args.topic, aspect_ratio=args.ratio, photo_set=args.photo_set)
     except Exception:
         logger.exception("❌ Pipeline failed.")
         sys.exit(1)

@@ -20,6 +20,12 @@ from typing import Any, Dict, List
 import config
 
 IdeaService = getattr(importlib.import_module("01_ideas.idea_service"), "IdeaService")
+SupabaseIdeaStore = getattr(
+    importlib.import_module("01_ideas.supabase_store"), "SupabaseIdeaStore"
+)
+SupabaseTableMissingError = getattr(
+    importlib.import_module("01_ideas.supabase_store"), "SupabaseTableMissingError"
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("IdeaGenerator")
@@ -127,6 +133,8 @@ def main():
                         help="Ideas requested per API call (default: 5)")
     parser.add_argument("--output", type=str, default=str(config.DATA_DIR / "ideas.json"),
                         help="Output JSON file path (default: data/ideas.json)")
+    parser.add_argument("--no-supabase", action="store_true",
+                        help="Do not save the generated ideas to Supabase")
     args = parser.parse_args()
 
     topic_label = args.topic or "auto-selected topics"
@@ -144,6 +152,21 @@ def main():
         print(f"  {idea['id']:>2}. {idea.get('title', '')}")
         if idea.get("hook"):
             print(f"      hook: {idea['hook']}")
+
+    if not args.no_supabase:
+        store = SupabaseIdeaStore()
+        if not store.is_configured:
+            print("\nℹ️  Supabase is not configured; skipped saving ideas to the database.")
+        else:
+            try:
+                saved = store.save_ideas(ideas, topic=args.topic, tone=args.tone)
+                print(f"\n🗄️  Saved {len(saved)} idea(s) to Supabase table '{store.table}'.")
+            except SupabaseTableMissingError as e:
+                logger.error("%s", e)
+                print(f"\n⚠️  Supabase table missing. Run supabase/schema.sql once, then retry.")
+            except Exception as e:
+                logger.exception("Supabase save failed.")
+                print(f"\n⚠️  Could not save ideas to Supabase: {e}")
 
 
 if __name__ == "__main__":
