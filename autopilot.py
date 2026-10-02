@@ -39,9 +39,6 @@ SupabaseIdeaStore = getattr(
 SupabaseTableMissingError = getattr(
     importlib.import_module("01_ideas.supabase_store"), "SupabaseTableMissingError"
 )
-IdeaService = getattr(
-    importlib.import_module("01_ideas.idea_service"), "IdeaService"
-)
 run_pipeline = getattr(importlib.import_module("main"), "run_pipeline")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -51,44 +48,48 @@ logger = logging.getLogger("Autopilot")
 def fetch_next_idea(store) -> "dict | None":
     idea = None
     try:
-        idea = store.next_unprocessed_idea()
+        # Fetch the ordered queue so completed ideas are skipped locally and the
+        # next pending title can be selected without generating a new batch.
+        ideas = store.list_ideas(
+            limit=1000,
+            video_generated=None,
+            order="index.asc,created_at.asc",
+        )
+        for candidate in ideas:
+            if candidate.get("video_generated") is True:
+                logger.info(
+                    "Skipping idea #%s because video_generated=true.",
+                    candidate.get("index"),
+                )
+                continue
+            idea = candidate
+            break
     except Exception as e:
         logger.warning("Transient network error fetching idea from Supabase: %s. Retrying in 5s...", e)
         time.sleep(5)
         try:
-            idea = store.next_unprocessed_idea()
+            ideas = store.list_ideas(
+                limit=1000,
+                video_generated=None,
+                order="index.asc,created_at.asc",
+            )
+            for candidate in ideas:
+                if candidate.get("video_generated") is True:
+                    logger.info(
+                        "Skipping idea #%s because video_generated=true.",
+                        candidate.get("index"),
+                    )
+                    continue
+                idea = candidate
+                break
         except Exception as e2:
             logger.error("Could not fetch idea from Supabase after retry: %s", e2)
             idea = None
 
-    # Verify video_generated is false; if true, skip to prevent repeating ideas
-    if idea and idea.get("video_generated"):
-        logger.warning(
-            "Idea #%s has video_generated=true; skipping to find an unprocessed idea...",
-            idea.get("index"),
-        )
-        idea = None
-
     if not idea:
         logger.info(
-            "💡 No unprocessed ideas (video_generated=false) left in Supabase. Auto-generating a fresh batch..."
+            "💡 No unprocessed ideas (video_generated=false) left in Supabase."
         )
-        try:
-            idea_svc = IdeaService()
-            new_ideas = idea_svc.generate_ideas(
-                topic="Interesting tech, programming, AI, or science topic",
-                tone="educational",
-                count=5,
-            )
-            if new_ideas:
-                saved = store.save_ideas(new_ideas, topic="Auto-Generated", tone="educational")
-                if saved:
-                    logger.info("🗄️ Saved %d new idea(s) to Supabase table '%s'.", len(saved), store.table)
-                    idea = store.next_unprocessed_idea()
-                else:
-                    idea = new_ideas[0]
-        except Exception as e:
-            logger.warning("Could not auto-generate new ideas: %s", e)
 
     return idea
 

@@ -280,7 +280,8 @@ def run_pipeline(
 
         # Cover: the first character panel stacked on a frame grabbed from the
         # gameplay clip. Used as the reel's first frame and its Instagram cover.
-        print(f"   • Building split cover thumbnail with title hook: '{title_hook}'...")
+        # The reel title is drawn in the vertical centre of the thumbnail.
+        print(f"   • Building split cover thumbnail with title centred: '{title}'...")
         gameplay_frame = workflow.job_dir / "gameplay_cover.jpg"
         subprocess.run([
             "ffmpeg", "-y", "-ss", "3", "-i", str(gameplay_path),
@@ -290,17 +291,19 @@ def run_pipeline(
             build_character_panel(image_files[0], renderer.width, top_h, title=None),
             fit_cover(gameplay_frame, (renderer.width, bottom_h)),
             cover_path,
-            title=title_hook,
+            title=title,
         )
 
         segment_w, segment_h = renderer.width, top_h
-        intro_still = panel_for(image_files[0])
+        # The reel's first frame is the full cover, so the thumbnail preview
+        # shows the title centred in the middle of the frame.
+        intro_still = cover_path
     else:
-        # Build the cover from the first storyboard image with the title hook on top.
-        print(f"   • Building cover thumbnail with title hook overlay: '{title_hook}'...")
+        # Build the cover from the first storyboard image with the title centred.
+        print(f"   • Building cover thumbnail with title centred: '{title}'...")
         CoverGenerator.create_cover(
             base_image=image_files[0],
-            title=title_hook,
+            title=title,
             output_path=cover_path,
             width=renderer.width,
             height=renderer.height,
@@ -314,9 +317,10 @@ def run_pipeline(
 
     # Render the stills as video segments and concatenate them (video only).
     segment_paths = []
-    if intro_sec > 0:
+    if intro_sec > 0 and layout != "split":
         # Static cover segment covering [0, intro_sec). The first dialogue line
-        # starts exactly at intro_sec, so this fills the lead-in window.
+        # starts exactly at intro_sec, so this fills the lead-in window. The
+        # split layout handles its full-frame cover intro in the final pass.
         intro_path = workflow.job_dir / "segment_intro.mp4"
         subprocess.run([
             "ffmpeg", "-y",
@@ -370,20 +374,45 @@ def run_pipeline(
             .replace("'", "\\'")
         )
         gameplay_start = round(random.uniform(0, 60), 2)
+        # Duration of the character track (everything after the cover intro).
+        body_dur = max(total_duration - intro_sec, 0.1)
+        stack_chain = (
+            f"[0:v]scale={renderer.width}:{top_h},setsar=1,fps=30[top];"
+            f"[1:v]scale={renderer.width}:{bottom_h}:force_original_aspect_ratio=increase,"
+            f"crop={renderer.width}:{bottom_h},setsar=1,fps=30,"
+            f"trim=duration={body_dur:.3f},setpts=PTS-STARTPTS[bot];"
+            f"[top][bot]vstack=inputs=2[vbody]"
+        )
+        if intro_sec > 0:
+            # Prepend the full-frame cover (title centred) so the reel's first
+            # frame, and therefore its thumbnail, matches the cover.
+            filter_complex = (
+                f"{stack_chain};"
+                f"[3:v]scale={renderer.width}:{renderer.height},setsar=1,fps=30,"
+                f"trim=duration={intro_sec:.3f},setpts=PTS-STARTPTS[intro];"
+                f"[intro][vbody]concat=n=2:v=1:a=0[vcat];"
+                f"[vcat]subtitles=filename='{clean_ass}'[vfinal]"
+            )
+            inputs = [
+                "-i", str(combined_path),
+                "-stream_loop", "-1", "-ss", f"{gameplay_start}", "-i", str(gameplay_path),
+                "-i", str(final_audio_path),
+                "-loop", "1", "-t", f"{intro_sec:.3f}", "-i", str(cover_path),
+            ]
+        else:
+            filter_complex = (
+                f"{stack_chain};"
+                f"[vbody]subtitles=filename='{clean_ass}'[vfinal]"
+            )
+            inputs = [
+                "-i", str(combined_path),
+                "-stream_loop", "-1", "-ss", f"{gameplay_start}", "-i", str(gameplay_path),
+                "-i", str(final_audio_path),
+            ]
         subprocess.run([
             "ffmpeg", "-y",
-            "-i", str(combined_path),
-            "-stream_loop", "-1", "-ss", f"{gameplay_start}", "-i", str(gameplay_path),
-            "-i", str(final_audio_path),
-            "-filter_complex",
-            (
-                f"[0:v]scale={renderer.width}:{top_h},setsar=1[top];"
-                f"[1:v]scale={renderer.width}:{bottom_h}:force_original_aspect_ratio=increase,"
-                f"crop={renderer.width}:{bottom_h},setsar=1,"
-                f"trim=duration={total_duration:.3f},setpts=PTS-STARTPTS[bot];"
-                f"[top][bot]vstack=inputs=2[v];"
-                f"[v]subtitles=filename='{clean_ass}'[vfinal]"
-            ),
+            *inputs,
+            "-filter_complex", filter_complex,
             "-map", "[vfinal]", "-map", "2:a",
             "-c:v", "libx264", "-preset", "fast", "-crf", "18",
             "-pix_fmt", "yuv420p",

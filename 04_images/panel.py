@@ -259,6 +259,8 @@ def stack_vertical(
     canvas.paste(bottom_image, (0, top_image.height))
 
     if title:
+        # Centre the title vertically on the finished thumbnail so it is always
+        # visible, even when the platform crops the cover to a shorter ratio.
         draw = ImageDraw.Draw(canvas)
         _draw_text_block(
             draw,
@@ -266,8 +268,8 @@ def stack_vertical(
             width,
             y_top=0,
             y_bottom=total_height,
-            max_size=44,
-            min_size=28,
+            max_size=max(48, int(width * 0.075)),
+            min_size=max(30, int(width * 0.040)),
             use_badge=True,
         )
 
