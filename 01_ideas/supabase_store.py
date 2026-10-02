@@ -136,21 +136,35 @@ class SupabaseIdeaStore:
         """Update the ``video_generated`` flag for a single row."""
         if not self.is_configured:
             return False
-        response = httpx.patch(
-            f"{self.url}/rest/v1/{self.table}",
-            headers=self._headers(),
-            params={"id": f"eq.{row_id}"},
-            json={"video_generated": generated},
-            timeout=30.0,
-        )
-        if response.status_code not in (200, 204):
-            logger.warning(
-                "Failed to update video_generated (%s): %s",
-                response.status_code,
-                response.text[:200],
+
+        def _patch() -> bool:
+            response = httpx.patch(
+                f"{self.url}/rest/v1/{self.table}",
+                headers=self._headers(),
+                params={"id": f"eq.{row_id}"},
+                json={"video_generated": generated},
+                timeout=30.0,
             )
+            if response.status_code not in (200, 204):
+                logger.warning(
+                    "Failed to update video_generated (%s): %s",
+                    response.status_code,
+                    response.text[:200],
+                )
+                return False
+            return True
+
+        try:
+            return retry_call(
+                _patch,
+                attempts=3,
+                base_delay=2.0,
+                exceptions=(httpx.HTTPError, RuntimeError),
+                description="Supabase update video_generated",
+            )
+        except Exception as e:
+            logger.warning("Could not update video_generated after retries: %s", e)
             return False
-        return True
 
     # --------------------------------------------------------------------- read
     def list_ideas(
@@ -168,16 +182,26 @@ class SupabaseIdeaStore:
         }
         if video_generated is not None:
             params["video_generated"] = f"eq.{str(video_generated).lower()}"
-        response = httpx.get(
-            f"{self.url}/rest/v1/{self.table}",
-            headers=self._headers(),
-            params=params,
-            timeout=30.0,
+
+        def _get() -> List[Dict[str, Any]]:
+            response = httpx.get(
+                f"{self.url}/rest/v1/{self.table}",
+                headers=self._headers(),
+                params=params,
+                timeout=30.0,
+            )
+            if response.status_code == 404 or "PGRST205" in response.text:
+                raise SupabaseTableMissingError(self._missing_table_message())
+            response.raise_for_status()
+            return response.json()
+
+        return retry_call(
+            _get,
+            attempts=3,
+            base_delay=2.0,
+            exceptions=(httpx.HTTPError, RuntimeError),
+            description="Supabase list ideas",
         )
-        if response.status_code == 404 or "PGRST205" in response.text:
-            raise SupabaseTableMissingError(self._missing_table_message())
-        response.raise_for_status()
-        return response.json()
 
     def next_unprocessed_idea(self) -> Optional[Dict[str, Any]]:
         """
@@ -185,8 +209,11 @@ class SupabaseIdeaStore:
         ``index`` 1 and moving upward. Returns ``None`` when all are done.
         """
         rows = self.list_ideas(
-            limit=1,
+            limit=50,
             video_generated=False,
             order="index.asc,created_at.asc",
         )
-        return rows[0] if rows else None
+        for row in rows:
+            if not row.get("video_generated"):
+                return row
+        return None

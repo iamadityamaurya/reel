@@ -65,51 +65,93 @@ def _draw_text_block(
     y_bottom: int,
     max_size: int,
     min_size: int,
-    fill: Tuple[int, int, int],
-    max_lines: int = 2,
-    stroke_fill: Tuple[int, int, int] = (255, 255, 255),
+    fill: Tuple[int, int, int] = (255, 255, 255),
+    max_lines: int = 3,
+    stroke_fill: Tuple[int, int, int] = (0, 0, 0),
+    use_badge: bool = True,
 ) -> None:
     """
-    Draw ``text`` centered horizontally, auto-shrinking/wrapping it to fit within
-    the box ``[y_top, y_bottom]`` and ``94%`` of ``width``.
+    Draw ``text`` centered horizontally as a title hook badge card, auto-shrinking/wrapping
+    it to fit within the box ``[y_top, y_bottom]`` and ``90%`` of ``width``.
     """
     if not text:
         return
-    max_w = int(width * 0.94)
+    max_w = int(width * 0.90)
     max_h = y_bottom - y_top
     size = max_size
     lines: list = [text]
     font = _load_font(size)
-    stroke = max(2, size // 16)
-    spacing = max(2, size // 8)
-    while size > min_size:
+    spacing = max(4, size // 8)
+
+    while size >= min_size:
         font = _load_font(size)
-        stroke = max(2, size // 16)
-        lines = _wrap_to_width(draw, text, font, max_w, stroke)
-        line_bbox = draw.textbbox((0, 0), "Ag", font=font, stroke_width=stroke)
-        line_h = line_bbox[3] - line_bbox[1]
-        spacing = max(2, size // 8)
-        total_h = line_h * len(lines) + spacing * max(0, len(lines) - 1)
-        if len(lines) <= max_lines and total_h <= max_h:
+        spacing = max(4, size // 8)
+        words = text.split()
+        lines = []
+        curr = ""
+        for w in words:
+            cand = f"{curr} {w}".strip()
+            bbox = draw.textbbox((0, 0), cand, font=font)
+            if bbox[2] - bbox[0] <= max_w - 60 or not curr:
+                curr = cand
+            else:
+                lines.append(curr)
+                curr = w
+        if curr:
+            lines.append(curr)
+
+        body = "\n".join(lines)
+        bbox = draw.multiline_textbbox((0, 0), body, font=font, spacing=spacing, align="center")
+        total_h = bbox[3] - bbox[1]
+        if len(lines) <= max_lines and total_h <= max_h - 24:
             break
         size -= 2
 
     body = "\n".join(lines)
-    bbox = draw.multiline_textbbox(
-        (0, 0), body, font=font, spacing=spacing, align="center", stroke_width=stroke
-    )
-    text_x = (width - (bbox[2] - bbox[0])) // 2 - bbox[0]
-    text_y = y_top + (max_h - (bbox[3] - bbox[1])) // 2 - bbox[1]
-    draw.multiline_text(
-        (text_x, text_y),
-        body,
-        font=font,
-        fill=fill,
-        spacing=spacing,
-        align="center",
-        stroke_width=stroke,
-        stroke_fill=stroke_fill,
-    )
+    bbox = draw.multiline_textbbox((0, 0), body, font=font, spacing=spacing, align="center")
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+
+    if use_badge:
+        pad_x = 36
+        pad_y = 16
+        card_w = text_w + pad_x * 2
+        card_h = text_h + pad_y * 2
+        card_x0 = (width - card_w) // 2
+        card_y0 = y_top + (max_h - card_h) // 2
+        card_x1 = card_x0 + card_w
+        card_y1 = card_y0 + card_h
+
+        draw.rounded_rectangle(
+            [card_x0, card_y0, card_x1, card_y1],
+            radius=18,
+            fill=(15, 23, 42),      # Dark slate container
+            outline=(51, 65, 85),   # Soft accent border
+            width=3,
+        )
+        text_x = card_x0 + (card_w - text_w) // 2 - bbox[0]
+        text_y = card_y0 + (card_h - text_h) // 2 - bbox[1]
+        draw.multiline_text(
+            (text_x, text_y),
+            body,
+            font=font,
+            fill=(255, 255, 255),
+            spacing=spacing,
+            align="center",
+        )
+    else:
+        text_x = (width - text_w) // 2 - bbox[0]
+        text_y = y_top + (max_h - text_h) // 2 - bbox[1]
+        draw.multiline_text(
+            (text_x, text_y),
+            body,
+            font=font,
+            fill=fill,
+            spacing=spacing,
+            align="center",
+            stroke_width=max(2, size // 16),
+            stroke_fill=stroke_fill,
+        )
 
 
 def content_bbox(
@@ -155,7 +197,7 @@ def build_character_panel(
     Build a ``width`` x ``height`` panel with the characters from ``image_path``
     cropped to their content, scaled to fit and anchored to the bottom edge.
 
-    ``title`` draws a bold header at the top (kept clear of the characters).
+    ``title`` draws a bold header badge at the top (kept clear of the characters).
     """
     image = Image.open(image_path).convert("RGB")
     left, top, right, bottom = content_bbox(image)
@@ -173,7 +215,7 @@ def build_character_panel(
 
     panel = Image.new("RGB", (width, height), background)
 
-    header = int(height * 0.13) if title else 0
+    header = int(height * 0.20) if title else 0
     avail_w = int(width * 0.94)
     avail_h = int((height - header) * content_scale)
     scale = min(avail_w / crop.width, avail_h / crop.height)
@@ -188,8 +230,9 @@ def build_character_panel(
         draw = ImageDraw.Draw(panel)
         _draw_text_block(
             draw, title, width,
-            int(header * 0.04), header - int(header * 0.04),
-            title_size or max(48, int(height * 0.075)), 30, (20, 20, 20),
+            0, header,
+            title_size or max(44, int(height * 0.065)), 28, (255, 255, 255),
+            use_badge=True,
         )
 
     return panel
@@ -206,12 +249,28 @@ def stack_vertical(
     bottom_image: Image.Image,
     output_path: Path,
     quality: int = 92,
+    title: Optional[str] = None,
 ) -> Path:
     """Stack two same-width images vertically and save the result as JPEG."""
     width = top_image.width
-    canvas = Image.new("RGB", (width, top_image.height + bottom_image.height), (0, 0, 0))
+    total_height = top_image.height + bottom_image.height
+    canvas = Image.new("RGB", (width, total_height), (0, 0, 0))
     canvas.paste(top_image, (0, 0))
     canvas.paste(bottom_image, (0, top_image.height))
+
+    if title:
+        draw = ImageDraw.Draw(canvas)
+        _draw_text_block(
+            draw,
+            title,
+            width,
+            y_top=0,
+            y_bottom=total_height,
+            max_size=44,
+            min_size=28,
+            use_badge=True,
+        )
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
     canvas.save(output_path, "JPEG", quality=quality)
     logger.info(f"Stacked cover written to {output_path}")

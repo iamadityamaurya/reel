@@ -244,7 +244,9 @@ def run_pipeline(
 
     renderer = VideoRenderer(aspect_ratio=aspect_ratio)
     total_duration = timings[-1]["end"] if timings else max(intro_sec, 0.1)
-    title = selected_idea["title"]
+    title = selected_idea.get("title", "")
+    hook = selected_idea.get("hook", "")
+    title_hook = hook.strip() if (hook and hook.strip()) else title
     cover_path = workflow.job_dir / "cover.jpg"
 
     # Build the still source for each line, the cover, and the segment frame size.
@@ -268,7 +270,7 @@ def run_pipeline(
             if img not in panel_cache:
                 panel_file = workflow.job_dir / f"panel_{img.stem}.png"
                 build_character_panel(
-                    img, renderer.width, top_h, title=title
+                    img, renderer.width, top_h, title=title_hook
                 ).save(panel_file)
                 panel_cache[img] = panel_file
             return panel_cache[img]
@@ -278,26 +280,27 @@ def run_pipeline(
 
         # Cover: the first character panel stacked on a frame grabbed from the
         # gameplay clip. Used as the reel's first frame and its Instagram cover.
-        print("   • Building split cover image...")
+        print(f"   • Building split cover thumbnail with title hook: '{title_hook}'...")
         gameplay_frame = workflow.job_dir / "gameplay_cover.jpg"
         subprocess.run([
             "ffmpeg", "-y", "-ss", "3", "-i", str(gameplay_path),
             "-frames:v", "1", str(gameplay_frame),
         ], check=True)
         stack_vertical(
-            build_character_panel(image_files[0], renderer.width, top_h, title=title),
+            build_character_panel(image_files[0], renderer.width, top_h, title=None),
             fit_cover(gameplay_frame, (renderer.width, bottom_h)),
             cover_path,
+            title=title_hook,
         )
 
         segment_w, segment_h = renderer.width, top_h
         intro_still = panel_for(image_files[0])
     else:
-        # Build the cover from the first storyboard image with the idea title on top.
-        print("   • Building cover image with the title overlay...")
+        # Build the cover from the first storyboard image with the title hook on top.
+        print(f"   • Building cover thumbnail with title hook overlay: '{title_hook}'...")
         CoverGenerator.create_cover(
             base_image=image_files[0],
-            title=title,
+            title=title_hook,
             output_path=cover_path,
             width=renderer.width,
             height=renderer.height,

@@ -75,18 +75,29 @@ class CoverGenerator:
         img = Image.alpha_composite(img, shade)
 
         draw = ImageDraw.Draw(img)
-        font = _load_font(96)
-        stroke = 6
+        size = 96
+        font = _load_font(size)
+        stroke = max(2, size // 16)
         lines = _wrap_text(title, draw, font, int(width * 0.86), stroke)
-        text = "\n".join(lines)
+        while size > 40:
+            font = _load_font(size)
+            stroke = max(2, size // 16)
+            lines = _wrap_text(title, draw, font, int(width * 0.86), stroke)
+            bbox = draw.multiline_textbbox(
+                (0, 0), "\n".join(lines), font=font, spacing=20, align="center", stroke_width=stroke
+            )
+            if len(lines) <= 3 and (bbox[3] - bbox[1]) <= height * 0.35:
+                break
+            size -= 4
 
+        text = "\n".join(lines)
         bbox = draw.multiline_textbbox(
             (0, 0), text, font=font, spacing=20, align="center", stroke_width=stroke
         )
         text_w = bbox[2] - bbox[0]
         text_h = bbox[3] - bbox[1]
         x = (width - text_w) / 2 - bbox[0]
-        y = height * 0.66 - text_h / 2 - bbox[1]
+        y = (height - text_h) / 2 - bbox[1]
 
         draw.multiline_text(
             (x, y),
