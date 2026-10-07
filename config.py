@@ -60,5 +60,9 @@ SUPABASE_IDEAS_TABLE = os.getenv("SUPABASE_IDEAS_TABLE", "ideas")
 IG_USER_ID = os.getenv("IG_USER_ID", "")
 IG_ACCESS_TOKEN = os.getenv("IG_ACCESS_TOKEN", "")
 
+# Telegram control bot. The bot accepts commands only from this numeric user id.
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+ALLOWED_USER_ID = os.getenv("ALLOWED_USER_ID", "")
+
 # Execution mode - when True, publishing is simulated instead of hitting the API
 DRY_RUN_MODE = os.getenv("DRY_RUN_MODE", "false").strip().lower() in ("1", "true", "yes")

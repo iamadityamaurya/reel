@@ -183,6 +183,30 @@ python3 main.py --topic "Git vs GitHub" --layout split --photo-set 01 --no-publi
 Set `DRY_RUN_MODE=true` in `.env` to skip real uploads and Instagram calls. The
 pipeline still renders the video and logs mock URLs and IDs.
 
+## Telegram control bot
+
+The pipeline can also be controlled from Telegram. Create a bot with BotFather,
+then add a newly generated token and your numeric Telegram user id to `.env`:
+
+```bash
+TELEGRAM_BOT_TOKEN=your_new_bot_token
+ALLOWED_USER_ID=your_telegram_user_id
+```
+
+Start the bot from the project virtual environment:
+
+```bash
+./.venv/bin/python telegram_bot.py
+```
+
+The bot shows a Telegram Reply Keyboard with buttons for Generate Ideas, View
+Ideas, Next Idea, Make Next Reel, Make Custom Topic, and Status. Generated
+previews show Save buttons; tapping one inserts only the selected idea into
+Supabase. Slash commands such as `/generate <topic>` and `/save <number>` remain
+available as a fallback. Only `ALLOWED_USER_ID` can use the bot. Renders run one
+at a time and the selected Supabase row is marked `video_generated=true` after
+completion.
+
 ## Notes
 
 - Scripts are written in simple, everyday words and avoid long dashes.
